@@ -1,0 +1,21 @@
+{
+  "name": "kinect2-demo",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "prettier": "^3.6.2",
+    "vite": "^7.2.4"
+  },
+  "dependencies": {
+    "kinect2": "^0.3.0",
+    "ws": "^8.18.3"
+  }
+}
