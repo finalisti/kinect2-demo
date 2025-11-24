@@ -85,6 +85,71 @@ function drawBodyFrame(bodyFrame) {
   let idx = 0;
   for (const body of bodyFrame.bodies) {
     if (!body || !body.tracked) continue;
+    // draw skeleton bones (lines) first so joints/hands render on top
+    (function drawBones() {
+      // robust lookup for JointType keys: try several casings
+      const jtLookup = (name) =>
+        JointType[name] ??
+        JointType[name.charAt(0).toUpperCase() + name.slice(1)] ??
+        JointType[name.toUpperCase()] ??
+        null;
+
+      const pairs = [
+        ['spineBase', 'spineMid'],
+        ['spineMid', 'spineShoulder'],
+        ['spineShoulder', 'neck'],
+        ['neck', 'head'],
+
+        ['spineShoulder', 'shoulderLeft'],
+        ['shoulderLeft', 'elbowLeft'],
+        ['elbowLeft', 'wristLeft'],
+        ['wristLeft', 'handLeft'],
+        ['handLeft', 'handTipLeft'],
+
+        ['spineShoulder', 'shoulderRight'],
+        ['shoulderRight', 'elbowRight'],
+        ['elbowRight', 'wristRight'],
+        ['wristRight', 'handRight'],
+        ['handRight', 'handTipRight'],
+
+        ['spineBase', 'hipLeft'],
+        ['hipLeft', 'kneeLeft'],
+        ['kneeLeft', 'ankleLeft'],
+        ['ankleLeft', 'footLeft'],
+
+        ['spineBase', 'hipRight'],
+        ['hipRight', 'kneeRight'],
+        ['kneeRight', 'ankleRight'],
+        ['ankleRight', 'footRight'],
+      ];
+
+      ctx.lineWidth = 4;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+
+      for (const [aName, bName] of pairs) {
+        const aId = jtLookup(aName);
+        const bId = jtLookup(bName);
+        if (aId == null || bId == null) continue;
+        const a = body.joints[aId];
+        const b = body.joints[bId];
+        if (!a || !b) continue;
+        const tsNotTracked =
+          TrackingState.notTracked !== undefined ? TrackingState.notTracked : 0;
+        if (a.trackingState <= tsNotTracked || b.trackingState <= tsNotTracked)
+          continue;
+        const ax = a.colorX != null ? a.colorX : a.depthX * canvas.width;
+        const ay = a.colorY != null ? a.colorY : a.depthY * canvas.height;
+        const bx = b.colorX != null ? b.colorX : b.depthX * canvas.width;
+        const by = b.colorY != null ? b.colorY : b.depthY * canvas.height;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+        ctx.stroke();
+        ctx.closePath();
+      }
+    })();
     for (const jt of Object.keys(body.joints || {})) {
       const joint = body.joints[jt];
       if (!joint) continue;
