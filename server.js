@@ -43,8 +43,8 @@ wss.on('connection', (ws) => {
     JointType: serializeEnum(Kinect2.JointType),
     HandState: serializeEnum(Kinect2.HandState),
     TrackingState: serializeEnum(Kinect2.TrackingState),
-    depthWidth: 512,
-    depthHeight: 424,
+    depthWidth: 1920,
+    depthHeight: 1080,
   };
   ws.send(JSON.stringify(constants));
 
@@ -73,8 +73,8 @@ wss.on('connection', (ws) => {
 // This keeps the server-side logic simple and deterministic.
 function mapJointToColor(joint) {
   if (!joint) return {x: 0, y: 0};
-  const x = joint.depthX != null ? joint.depthX * 512 : 0;
-  const y = joint.depthY != null ? joint.depthY * 424 : 0;
+  const x = joint.depthX != null ? joint.depthX * 1920 : 0;
+  const y = joint.depthY != null ? joint.depthY * 1080 : 0;
   return {x, y};
 }
 

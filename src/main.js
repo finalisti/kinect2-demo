@@ -1,6 +1,6 @@
 // Skeleton-only client (no color feed)
-let depthWidth = 512;
-let depthHeight = 424;
+let depthWidth = 1920;
+let depthHeight = 1080;
 
 let ws = null;
 let streaming = false;
