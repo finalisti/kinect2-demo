@@ -1,4 +1,3 @@
-// Skeleton-only client (no color feed)
 let depthWidth = 1920;
 let depthHeight = 1080;
 
@@ -10,6 +9,23 @@ const ctx = canvas.getContext && canvas.getContext('2d');
 canvas.width = depthWidth;
 canvas.height = depthHeight;
 
+// track per-body hand-raised state to detect transitions
+const handRaisedStates = {};
+
+// on-screen indicator element (created dynamically so HTML doesn't need edits)
+const kinectIndicator = document.createElement('div');
+kinectIndicator.id = 'kinect-indicator';
+document.body.appendChild(kinectIndicator);
+
+function showIndicator(text) {
+  kinectIndicator.textContent = text;
+  kinectIndicator.classList.add('kinect-indicator-visible');
+}
+
+function hideIndicator() {
+  kinectIndicator.classList.remove('kinect-indicator-visible');
+}
+
 function startStreaming() {
   if (ws) return;
   ws = new WebSocket('ws://localhost:8081');
@@ -19,7 +35,7 @@ function startStreaming() {
   });
 
   ws.addEventListener('message', (evt) => {
-    if (typeof evt.data !== 'string') return; // ignore binary
+    if (typeof evt.data !== 'string') return;
     let msg;
     try {
       msg = JSON.parse(evt.data);
@@ -82,6 +98,12 @@ function drawBodyFrame(bodyFrame) {
   const K = window.__KINECT_CONSTS || {};
   const TrackingState = K.TrackingState || {};
   const JointType = K.JointType || {};
+  // robust lookup for JointType keys: try several casings
+  const jtLookup = (name) =>
+    JointType[name] ??
+    JointType[name.charAt(0).toUpperCase() + name.slice(1)] ??
+    JointType[name.toUpperCase()] ??
+    null;
   let idx = 0;
   for (const body of bodyFrame.bodies) {
     if (!body || !body.tracked) continue;
@@ -169,6 +191,77 @@ function drawBodyFrame(bodyFrame) {
     }
     updateHandState(body.leftHandState, body.joints[JointType.handLeft]);
     updateHandState(body.rightHandState, body.joints[JointType.handRight]);
+    // detect hand-above-head and print "W (left/right/both)" while raised (throttled)
+    try {
+      const bodyId = body.trackingId != null ? body.trackingId : idx;
+      const head = body.joints[jtLookup('head')];
+      const leftHand = body.joints[jtLookup('handLeft')];
+      const rightHand = body.joints[jtLookup('handRight')];
+      const getY = (j) => {
+        if (!j) return null;
+        return j.colorY != null ? j.colorY : j.depthY * canvas.height;
+      };
+      const headY = getY(head);
+      const lhY = getY(leftHand);
+      const rhY = getY(rightHand);
+      const nowLeftRaised = lhY != null && headY != null && lhY < headY;
+      const nowRightRaised = rhY != null && headY != null && rhY < headY;
+      const now = Date.now();
+      const MIN_INTERVAL = 500; // ms between logs per state
+      const prev = handRaisedStates[bodyId] || {
+        left: {raised: false, last: 0},
+        right: {raised: false, last: 0},
+        both: {raised: false, last: 0},
+      };
+
+      const nowBothRaised = nowLeftRaised && nowRightRaised;
+
+      if (nowBothRaised) {
+        // throttle "both" logging
+        if (!prev.both.raised || now - prev.both.last >= MIN_INTERVAL) {
+          console.log('W (both)');
+          prev.both.last = now;
+        }
+        prev.both.raised = true;
+        // mark singles as raised too (so state is consistent)
+        prev.left.raised = true;
+        prev.right.raised = true;
+        showIndicator('W (both)');
+      } else {
+        prev.both.raised = false;
+        // left-hand handling
+        if (nowLeftRaised) {
+          if (!prev.left.raised || now - prev.left.last >= MIN_INTERVAL) {
+            console.log('W (left)');
+            prev.left.last = now;
+          }
+          prev.left.raised = true;
+          showIndicator('W (left)');
+        } else {
+          prev.left.raised = false;
+        }
+        // right-hand handling
+        if (nowRightRaised) {
+          if (!prev.right.raised || now - prev.right.last >= MIN_INTERVAL) {
+            console.log('W (right)');
+            prev.right.last = now;
+          }
+          prev.right.raised = true;
+          // if left is also raised we'll already have shown 'left' above; prefer showing both when applicable
+          if (!nowLeftRaised) showIndicator('W (right)');
+        } else {
+          prev.right.raised = false;
+        }
+        // hide indicator if neither hand is raised
+        if (!nowLeftRaised && !nowRightRaised) {
+          hideIndicator();
+        }
+      }
+
+      handRaisedStates[bodyId] = prev;
+    } catch (e) {
+      // ignore errors in optional detection step
+    }
     idx++;
   }
 }
