@@ -11,6 +11,7 @@ canvas.height = depthHeight;
 
 // track per-body hand-raised state to detect transitions
 const handRaisedStates = {};
+const handExtendedStates = {};
 
 // on-screen indicator element (created dynamically so HTML doesn't need edits)
 const kinectIndicator = document.createElement('div');
@@ -194,6 +195,9 @@ function drawBodyFrame(bodyFrame) {
     // detect hand-above-head and print "W (left/right/both)" while raised (throttled)
     try {
       const bodyId = body.trackingId != null ? body.trackingId : idx;
+      const torso = body.joints[jtLookup('spineMid')];
+      const leftElbow = body.joints[jtLookup('elbowLeft')];
+      const rightElbow = body.joints[jtLookup('elbowRight')];
       const head = body.joints[jtLookup('head')];
       const leftHand = body.joints[jtLookup('handLeft')];
       const rightHand = body.joints[jtLookup('handRight')];
@@ -201,9 +205,24 @@ function drawBodyFrame(bodyFrame) {
         if (!j) return null;
         return j.colorY != null ? j.colorY : j.depthY * canvas.height;
       };
+      const getX = (j) => {
+        if (!j) return null;
+        return j.colorX != null ? j.colorX : j.depthX * canvas.width;
+      };
       const headY = getY(head);
       const lhY = getY(leftHand);
+      const lhX = getX(leftHand);
       const rhY = getY(rightHand);
+      const rhX = getX(rightHand);
+      const torsoY = getY(torso);
+      const leX = getX(leftElbow);
+      const leY = getY(leftElbow);
+      const reX = getX(rightElbow);
+      const reY = getY(rightElbow);
+      const nowLeftExtended =
+        lhX != null && leX != null && lhX < leX && lhY != null && lhY < torsoY;
+      const nowRightExtended =
+        rhX != null && reX != null && rhX > reX && rhY != null && rhY < torsoY;
       const nowLeftRaised = lhY != null && headY != null && lhY < headY;
       const nowRightRaised = rhY != null && headY != null && rhY < headY;
       const now = Date.now();
@@ -213,6 +232,40 @@ function drawBodyFrame(bodyFrame) {
         right: {raised: false, last: 0},
         both: {raised: false, last: 0},
       };
+      const prevExt = handExtendedStates[bodyId] || {
+        left: {extended: false, last: 0},
+        right: {extended: false, last: 0},
+        both: {extended: false, last: 0},
+      };
+
+      if (nowLeftExtended) {
+        if (!prevExt.left.extended || now - prevExt.left.last >= MIN_INTERVAL) {
+          console.log('A');
+          prevExt.left.last = now;
+        }
+        prevExt.left.extended = true;
+        showIndicator('A');
+      } else {
+        prevExt.left.extended = false;
+      }
+      // right-hand handling
+      if (nowRightExtended) {
+        if (
+          !prevExt.right.extended ||
+          now - prevExt.right.last >= MIN_INTERVAL
+        ) {
+          console.log('D');
+          prevExt.right.last = now;
+        }
+        prevExt.right.extended = true;
+        showIndicator('D');
+      } else {
+        prevExt.right.extended = false;
+      }
+      // hide indicator if neither hand is extended
+      if (!nowLeftExtended && !nowRightExtended) {
+        hideIndicator();
+      }
 
       const nowBothRaised = nowLeftRaised && nowRightRaised;
 
@@ -259,6 +312,7 @@ function drawBodyFrame(bodyFrame) {
       }
 
       handRaisedStates[bodyId] = prev;
+      handExtendedStates[bodyId] = prevExt;
     } catch (e) {
       // ignore errors in optional detection step
     }
