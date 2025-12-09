@@ -3,6 +3,20 @@ let depthHeight = 1080;
 
 let ws = null;
 let streaming = false;
+// helper to send control commands to the local server which will synthesize
+// OS-level keypresses (server must support receiving {type:'command',command:'...'})
+function sendCommand(cmd) {
+  try {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({type: 'command', command: cmd}));
+    } else {
+      // fallback to logging when socket not ready
+      console.log('command', cmd);
+    }
+  } catch (e) {
+    console.error('Failed to send command', e);
+  }
+}
 // DOM canvas + context
 const canvas = document.getElementById('outputCanvas');
 const ctx = canvas.getContext && canvas.getContext('2d');
@@ -240,7 +254,7 @@ function drawBodyFrame(bodyFrame) {
 
       if (nowLeftExtended) {
         if (!prevExt.left.extended || now - prevExt.left.last >= MIN_INTERVAL) {
-          console.log('A');
+          sendCommand('a');
           prevExt.left.last = now;
         }
         prevExt.left.extended = true;
@@ -254,7 +268,7 @@ function drawBodyFrame(bodyFrame) {
           !prevExt.right.extended ||
           now - prevExt.right.last >= MIN_INTERVAL
         ) {
-          console.log('D');
+          sendCommand('d');
           prevExt.right.last = now;
         }
         prevExt.right.extended = true;
@@ -272,7 +286,7 @@ function drawBodyFrame(bodyFrame) {
       if (nowBothRaised) {
         // throttle "both" logging
         if (!prev.both.raised || now - prev.both.last >= MIN_INTERVAL) {
-          console.log('W (both)');
+          sendCommand('w');
           prev.both.last = now;
         }
         prev.both.raised = true;
@@ -285,7 +299,7 @@ function drawBodyFrame(bodyFrame) {
         // left-hand handling
         if (nowLeftRaised) {
           if (!prev.left.raised || now - prev.left.last >= MIN_INTERVAL) {
-            console.log('W (left)');
+            sendCommand('w');
             prev.left.last = now;
           }
           prev.left.raised = true;
@@ -296,7 +310,7 @@ function drawBodyFrame(bodyFrame) {
         // right-hand handling
         if (nowRightRaised) {
           if (!prev.right.raised || now - prev.right.last >= MIN_INTERVAL) {
-            console.log('W (right)');
+            sendCommand('w');
             prev.right.last = now;
           }
           prev.right.raised = true;

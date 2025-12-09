@@ -15,6 +15,7 @@
     "vite": "^7.2.4"
   },
   "dependencies": {
+    "@jitsi/robotjs": "^0.6.18",
     "kinect2": "^0.3.0",
     "ws": "^8.18.3"
   }
