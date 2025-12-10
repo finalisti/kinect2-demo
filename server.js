@@ -1,9 +1,49 @@
 import Kinect2 from 'kinect2';
 import {WebSocketServer} from 'ws';
+// NutJS for OS-level input (move mouse / press keys)
+import {mouse, keyboard, Key, Point, straightTo} from '@nut-tree-fork/nut-js';
+
+// small helper to sleep
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Relative mouse movement using moveRelative for Unity compatibility.
+// Unity's locked cursor uses raw relative deltas, not absolute position.
+// This avoids the stutter caused by Unity fighting against cursor repositioning.
+
+// Track mouse position server-side (like the working example)
+let mousePosition = {x: 960, y: 540}; // center of typical 1920x1080 screen
+let lastPosition = {x: 960, y: 540};
+
+async function moveMouseDelta(deltaX, deltaY) {
+  try {
+    // Update tracked position and move
+    mousePosition.x = mousePosition.x + deltaX;
+    mousePosition.y = mousePosition.y + deltaY;
+
+    // Clamp to screen bounds (rough estimate; adjust if needed)
+    mousePosition.x = Math.max(0, Math.min(1920, mousePosition.x));
+    mousePosition.y = Math.max(0, Math.min(1080, mousePosition.y));
+
+    // Move to the new absolute position
+    // NutJS's straightTo will handle the motion smoothly
+    await mouse.move(
+      straightTo(
+        new Point(Math.round(mousePosition.x), Math.round(mousePosition.y)),
+      ),
+    );
+  } catch (e) {
+    console.error('moveMouseDelta failed:', e && e.message ? e.message : e);
+  }
+}
 
 const PORT = 8081;
 const kinect = new Kinect2();
 const wss = new WebSocketServer({port: PORT});
+
+// track whether we have the W key currently pressed to avoid duplicate presses
+let wPressed = false;
 
 if (!kinect.open()) {
   console.error(
@@ -47,6 +87,83 @@ wss.on('connection', (ws) => {
     depthHeight: 1080,
   };
   ws.send(JSON.stringify(constants));
+
+  // Accept simple control messages from clients: {cmd: 'MOUSE_MOVE'|'W_DOWN'|'W_UP'}
+  ws.on('message', async (data) => {
+    let msg;
+    try {
+      msg = JSON.parse(data.toString());
+    } catch (e) {
+      // ignore non-json messages
+      return;
+    }
+    const cmd = (msg && msg.cmd) || null;
+    if (!cmd) return;
+    try {
+      if (cmd === 'MOUSE_MOVE') {
+        // Hand position-based mouse movement (delta-based, X only, no smoothing)
+        try {
+          const screenWidth = 1920; // typical monitor width; adjust if needed
+          // Direct X mapping: left hand = low x, right hand = high x
+          const pointX = (msg.x || 0.5) * screenWidth;
+
+          // Compute simple delta (X only)
+          const deltaX = pointX - lastPosition.x;
+
+          // Update tracked position (X only, Y stays locked)
+          mousePosition.x = mousePosition.x + deltaX;
+          lastPosition.x = pointX;
+          // Y does NOT change - lock to prevent vertical camera movement
+
+          // Clamp X to screen bounds
+          mousePosition.x = Math.max(0, Math.min(screenWidth, mousePosition.x));
+
+          // Move to the new position (minimal call, no extra smoothing to avoid stutter)
+          await mouse.move(
+            straightTo(
+              new Point(
+                Math.round(mousePosition.x),
+                Math.round(mousePosition.y),
+              ),
+            ),
+          );
+        } catch (e) {
+          console.error('Mouse move failed:', e && e.message ? e.message : e);
+        }
+      } else if (cmd === 'W_DOWN') {
+        // press-and-hold W (if not already pressed)
+        if (!wPressed) {
+          try {
+            await keyboard.pressKey(Key.W);
+            wPressed = true;
+          } catch (e) {
+            console.error(
+              'Keyboard press failed:',
+              e && e.message ? e.message : e,
+            );
+          }
+        }
+      } else if (cmd === 'W_UP') {
+        // release W if it was pressed
+        if (wPressed) {
+          try {
+            await keyboard.releaseKey(Key.W);
+            wPressed = false;
+          } catch (e) {
+            console.error(
+              'Keyboard release failed:',
+              e && e.message ? e.message : e,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.error(
+        'Error handling client command:',
+        e && e.message ? e.message : e,
+      );
+    }
+  });
 
   // Start body reader when first client connects
   if (wss.clients.size === 1) {
