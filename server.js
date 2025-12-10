@@ -1,16 +1,5 @@
 import Kinect2 from 'kinect2';
 import {WebSocketServer} from 'ws';
-import {createRequire} from 'module';
-const require = createRequire(import.meta.url);
-let robot = null;
-try {
-  // robotjs is used to synthesize OS-level keypresses
-  robot = require('@jitsi/robotjs');
-} catch (e) {
-  console.warn(
-    'robotjs not available; keypress commands will be logged only. Install robotjs to enable OS key events.',
-  );
-}
 
 const PORT = 8081;
 const kinect = new Kinect2();
@@ -59,24 +48,6 @@ wss.on('connection', (ws) => {
   };
   ws.send(JSON.stringify(constants));
 
-  // receive command messages from client and map them to OS keypresses
-  ws.on('message', (data) => {
-    let msg = data;
-    try {
-      if (typeof data !== 'string') msg = data.toString();
-      const parsed = JSON.parse(msg);
-      if (parsed && parsed.type === 'command' && parsed.command) {
-        handleCommand(parsed.command);
-      }
-    } catch (err) {
-      // not JSON — accept single-letter raw commands for backward compatibility
-      const raw = msg && msg.toString && msg.toString().trim();
-      if (raw === 'A' || raw === 'a') handleCommand('a');
-      if (raw === 'D' || raw === 'd') handleCommand('d');
-      if (raw === 'W' || raw === 'w') handleCommand('w');
-    }
-  });
-
   // Start body reader when first client connects
   if (wss.clients.size === 1) {
     try {
@@ -95,30 +66,6 @@ wss.on('connection', (ws) => {
     }
   });
 });
-
-function handleCommand(command) {
-  // map simple commands to keys. Default mapping: 'a'->'a', 'd'->'d', 'w'->'w'
-  const keyMap = {
-    a: 'a',
-    d: 'd',
-    w: 'w',
-    left: 'left',
-    right: 'right',
-    jump: 'space',
-  };
-  const key = keyMap[command] || command;
-  try {
-    if (robot) {
-      // robotjs expects lower-case key names for most keys
-      robot.keyTap(String(key).toLowerCase());
-      console.log('Sent keypress:', key);
-    } else {
-      console.log('Received command (robotjs not installed):', command);
-    }
-  } catch (e) {
-    console.error('Error sending keypress for command', command, e);
-  }
-}
 // Broadcast body frames as JSON
 // Simplified mapping: do not call any Kinect mapping functions or attempt
 // to calculate precise pixel positions. Use the web client's resolution
