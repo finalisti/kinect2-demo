@@ -3,6 +3,16 @@ let depthHeight = 1080;
 
 let ws = null;
 let streaming = false;
+// helper: send control commands to server (A/D/W)
+// Updated to send hand position for delta-based mouse movement
+function sendInputBridge(cmd, data = {}) {
+  try {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({cmd, ...data}));
+  } catch (e) {
+    // non-fatal
+  }
+}
 // DOM canvas + context
 const canvas = document.getElementById('outputCanvas');
 const ctx = canvas.getContext && canvas.getContext('2d');
@@ -231,6 +241,7 @@ function drawBodyFrame(bodyFrame) {
         left: {raised: false, last: 0},
         right: {raised: false, last: 0},
         both: {raised: false, last: 0},
+        any: {raised: false, last: 0},
       };
       const prevExt = handExtendedStates[bodyId] || {
         left: {extended: false, last: 0},
@@ -238,9 +249,11 @@ function drawBodyFrame(bodyFrame) {
         both: {extended: false, last: 0},
       };
 
+      // LEFT HAND: Send when LEFT hand extends (moves mouse LEFT)
       if (nowLeftExtended) {
         if (!prevExt.left.extended || now - prevExt.left.last >= MIN_INTERVAL) {
-          console.log('A');
+          const normalizedX = lhX ? lhX / canvas.width : 0.5;
+          sendInputBridge('MOUSE_MOVE', {x: normalizedX, y: 0.5});
           prevExt.left.last = now;
         }
         prevExt.left.extended = true;
@@ -248,13 +261,14 @@ function drawBodyFrame(bodyFrame) {
       } else {
         prevExt.left.extended = false;
       }
-      // right-hand handling
+      // RIGHT HAND: Send when RIGHT hand extends (moves mouse RIGHT)
       if (nowRightExtended) {
         if (
           !prevExt.right.extended ||
           now - prevExt.right.last >= MIN_INTERVAL
         ) {
-          console.log('D');
+          const normalizedX = rhX ? rhX / canvas.width : 0.5;
+          sendInputBridge('MOUSE_MOVE', {x: normalizedX, y: 0.5});
           prevExt.right.last = now;
         }
         prevExt.right.extended = true;
@@ -267,25 +281,22 @@ function drawBodyFrame(bodyFrame) {
         hideIndicator();
       }
 
+      // unified "any hand raised" logic: hold W while any hand is raised
+      const nowAnyRaised = nowLeftRaised || nowRightRaised;
+      // handle both/left/right indicators as before, but only send W_DOWN/W_UP once
       const nowBothRaised = nowLeftRaised && nowRightRaised;
-
       if (nowBothRaised) {
-        // throttle "both" logging
         if (!prev.both.raised || now - prev.both.last >= MIN_INTERVAL) {
-          console.log('W (both)');
           prev.both.last = now;
         }
         prev.both.raised = true;
-        // mark singles as raised too (so state is consistent)
         prev.left.raised = true;
         prev.right.raised = true;
         showIndicator('W (both)');
       } else {
         prev.both.raised = false;
-        // left-hand handling
         if (nowLeftRaised) {
           if (!prev.left.raised || now - prev.left.last >= MIN_INTERVAL) {
-            console.log('W (left)');
             prev.left.last = now;
           }
           prev.left.raised = true;
@@ -293,22 +304,32 @@ function drawBodyFrame(bodyFrame) {
         } else {
           prev.left.raised = false;
         }
-        // right-hand handling
         if (nowRightRaised) {
           if (!prev.right.raised || now - prev.right.last >= MIN_INTERVAL) {
-            console.log('W (right)');
             prev.right.last = now;
           }
           prev.right.raised = true;
-          // if left is also raised we'll already have shown 'left' above; prefer showing both when applicable
           if (!nowLeftRaised) showIndicator('W (right)');
         } else {
           prev.right.raised = false;
         }
-        // hide indicator if neither hand is raised
         if (!nowLeftRaised && !nowRightRaised) {
           hideIndicator();
         }
+      }
+
+      // send W_DOWN when any hand becomes raised; send W_UP when none are raised
+      if (nowAnyRaised) {
+        if (!prev.any.raised || now - prev.any.last >= MIN_INTERVAL) {
+          sendInputBridge('W_DOWN');
+          prev.any.last = now;
+        }
+        prev.any.raised = true;
+      } else {
+        if (prev.any.raised) {
+          sendInputBridge('W_UP');
+        }
+        prev.any.raised = false;
       }
 
       handRaisedStates[bodyId] = prev;
